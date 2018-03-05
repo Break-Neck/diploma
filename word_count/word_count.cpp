@@ -1,10 +1,23 @@
 #include <iostream>
 #include <string>
+#include <unordered_map>
 #include <vector>
-#include "flat_hash_map.hpp"
 
 constexpr int kWordsStartPos = 2;
 constexpr int kMinemalWordCount = 1000;
+
+struct FastStringHasher {
+ public:
+  constexpr static size_t kMultiplier = 17;
+
+  size_t operator()(const std::string& str) const noexcept {
+    size_t hash = 0;
+    for (int i = 0; i < str.length(); ++i) {
+      hash = hash * kMultiplier + str[i];
+    }
+    return hash;
+  }
+};
 
 template <typename T>
 class Counter {
@@ -21,7 +34,7 @@ class Counter {
   const auto& GetMap() const noexcept { return count_map; }
 
  private:
-  ska::flat_hash_map<std::string, int> count_map;
+  std::unordered_map<std::string, int, FastStringHasher> count_map;
 };
 
 std::vector<std::string> Split(const std::string& str) {
