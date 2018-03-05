@@ -19,7 +19,6 @@ struct FastStringHasher {
   }
 };
 
-template <typename T>
 class Counter {
  public:
   void Up(const std::string& str) {
@@ -27,14 +26,21 @@ class Counter {
     if (it == count_map.end()) {
       count_map.insert({str, 1});
     } else {
-      ++(it->second);
+      if (++(it->second) == kMinemalWordCount) {
+        frequent_words.push_back(str);
+      }
     }
   }
 
-  const auto& GetMap() const noexcept { return count_map; }
+  const auto& GetFrequentWords() const noexcept { return frequent_words; }
+
+  int GetCount(const std::string& str) const {
+    return count_map.find(str)->second;
+  }
 
  private:
   std::unordered_map<std::string, int, FastStringHasher> count_map;
+  std::vector<std::string> frequent_words;
 };
 
 std::vector<std::string> Split(const std::string& str) {
@@ -56,7 +62,7 @@ int main() {
   std::ios::sync_with_stdio(false);
   std::cin.tie(nullptr);
   std::string line;
-  Counter<std::string> word_counter;
+  Counter word_counter;
   while (std::getline(std::cin, line)) {
     const auto splitted = Split(line);
     for (int i = kWordsStartPos; i < splitted.size(); ++i) {
@@ -66,10 +72,8 @@ int main() {
       }
     }
   }
-  for (const auto& it : word_counter.GetMap()) {
-    if (it.second >= kMinemalWordCount) {
-      std::cout << it.first << " " << it.second << "\n";
-    }
+  for (const auto& it : word_counter.GetFrequentWords()) {
+    std::cout << it << " " << word_counter.GetCount(it) << "\n";
   }
   return 0;
 }
