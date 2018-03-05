@@ -1,7 +1,7 @@
 #include <iostream>
-#include <vector>
 #include <string>
-#include <unordered_map>
+#include <vector>
+#include "flat_hash_map.hpp"
 
 constexpr int kWordsStartPos = 2;
 constexpr int kMinemalWordCount = 1000;
@@ -21,7 +21,7 @@ class Counter {
   const auto& GetMap() const noexcept { return count_map; }
 
  private:
-  std::unordered_map<std::string, int> count_map;
+  ska::flat_hash_map<std::string, int> count_map;
 };
 
 std::vector<std::string> Split(const std::string& str) {
