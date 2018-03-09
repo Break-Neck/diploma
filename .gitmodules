@@ -1,3 +1,0 @@
-[submodule "word_count/argparse"]
-	path = word_count/argparse
-	url = https://github.com/hbristow/argparse
