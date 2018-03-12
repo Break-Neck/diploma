@@ -6,19 +6,18 @@ def main():
     last_line, last_count = None, 0
 
     def emit():
-        print('{},{}'.format(last_line, last_count))
+        if last_line:
+            print('{}|{}'.format(last_line, last_count))
 
     for line in sys.stdin:
-        current_line, current_count_str = tuple(line.strip().rsplit(',', 1))
+        current_line = line.strip().rsplit('|', 1)[-1]
         if current_line != last_line:
-            if last_line:
-                emit()
+            emit()
             last_line = current_line
-            last_count = int(current_count_str)
+            last_count = 1
         else:
-            last_count += int(current_count_str)
-    if last_line:
-        emit()
+            last_count += 1
+    emit()
 
 
 
