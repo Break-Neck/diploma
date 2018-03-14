@@ -11,7 +11,7 @@ def get_good_words(good_words_file_path):
 
 
 def main():
-    if len(sys.argv) != 2:
+    if len(sys.argv) != 2 or sys.argv[1] == '-h':
         print('Need 1 argument: path to file with good words')
         sys.exit(1)
 
