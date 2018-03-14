@@ -26,7 +26,7 @@ class Counter {
     const auto it = CountMap_.find(str);
     const int old_number = it == CountMap_.end() ? 0 : it->second;
     const int new_number = old_number + up_number;
-    CountMap_.insert(std::move(it), {str, new_number});
+    CountMap_.insert_or_assign(std::move(it), str, new_number);
     if (old_number < MinimalFrequncy_ && new_number >= MinimalFrequncy_) {
       FrequentWords_.push_back(str);
     }
