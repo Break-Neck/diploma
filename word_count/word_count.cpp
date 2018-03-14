@@ -121,11 +121,11 @@ bool TryFillParams(int argc, const char** argv, int* out_frequency,
 int main(int argc, const char** argv) {
   std::ios::sync_with_stdio(false);
   std::cin.tie(nullptr);
-  int minimal_frequency, skip_fisrt;
-  if (!TryFillParams(argc, argv, &minimal_frequency, &skip_fisrt)) {
+  int minimal_frequency, skip_first;
+  if (!TryFillParams(argc, argv, &minimal_frequency, &skip_first)) {
     return 1;
   }
-  GetFrequentWordsFromStream(std::cin, minimal_frequency, skip_fisrt,
+  GetFrequentWordsFromStream(std::cin, minimal_frequency, skip_first,
                              [](const std::string& word, int count) {
                                std::cout << word << " " << count << "\n";
                              });
