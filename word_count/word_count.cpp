@@ -22,14 +22,13 @@ class Counter {
  public:
   Counter(int minimal_frequency) : MinimalFrequncy_(minimal_frequency) {}
 
-  void Up(const std::string& str) {
+  void Up(const std::string& str, int up_number = 1) {
     const auto it = CountMap_.find(str);
-    if (it == CountMap_.end()) {
-      CountMap_.insert({str, 1});
-    } else {
-      if (++(it->second) == MinimalFrequncy_) {
-        FrequentWords_.push_back(str);
-      }
+    const int old_number = it == CountMap_.end() ? 0 : it->second;
+    const int new_number = old_number + up_number;
+    CountMap_.insert_or_assign(std::move(it), str, new_number);
+    if (old_number < MinimalFrequncy_ && new_number >= MinimalFrequncy_) {
+      FrequentWords_.push_back(str);
     }
   }
 
@@ -92,7 +91,7 @@ bool TryFillParams(int argc, const char** argv, int* out_frequency,
   args::ArgumentParser parser("Count words and bigrams and save counts");
   args::HelpFlag help(parser, "help", "Display this help", {'h', "help"});
   args::ValueFlag<int> skip(parser, "skip",
-                            "How many words skip in the beggining of the line",
+                            "How many words skip in the beginning of the line",
                             {'s', "skip"}, args::Options::Required);
   args::ValueFlag<int> frequency(
       parser, "frequency",
@@ -122,11 +121,11 @@ bool TryFillParams(int argc, const char** argv, int* out_frequency,
 int main(int argc, const char** argv) {
   std::ios::sync_with_stdio(false);
   std::cin.tie(nullptr);
-  int minimal_frequency, skip_fisrt;
-  if (!TryFillParams(argc, argv, &minimal_frequency, &skip_fisrt)) {
+  int minimal_frequency, skip_first;
+  if (!TryFillParams(argc, argv, &minimal_frequency, &skip_first)) {
     return 1;
   }
-  GetFrequentWordsFromStream(std::cin, minimal_frequency, skip_fisrt,
+  GetFrequentWordsFromStream(std::cin, minimal_frequency, skip_first,
                              [](const std::string& word, int count) {
                                std::cout << word << " " << count << "\n";
                              });
