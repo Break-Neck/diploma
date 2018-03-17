@@ -2,6 +2,7 @@
 
 import sys
 
+
 def main():
     last_line, last_count = None, 0
 
@@ -20,7 +21,5 @@ def main():
     emit()
 
 
-
 if __name__ == '__main__':
     main()
-
