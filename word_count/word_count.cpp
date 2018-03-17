@@ -80,7 +80,10 @@ void ProcessWordsFromStream(std::istream& input, int skip_first_in_line,
   while (std::getline(input, line)) {
     const auto splitted = Split(line);
     for (int i = skip_first_in_line; i < splitted.size(); ++i) {
-      visitor.OnWord(splitted[i]);
+      visitor.OnWordObject(splitted[i]);
+      if (i > skip_first_in_line) {
+        visitor.OnWordObject(splitted[i - 1] + '|' + splitted[i]);
+      }
     }
     visitor.OnNewDocument();
   }
@@ -144,7 +147,7 @@ struct CountingVisitor {
     DocumentWordsSet.clear();
   }
 
-  void OnWord(const std::string& word) {
+  void OnWordObject(const std::string& word) {
     WordCounter.Up(word);
     DocumentWordsSet.insert(word);
   }
