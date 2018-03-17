@@ -1,6 +1,7 @@
 #include <iostream>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "args/args.hxx"
@@ -20,26 +21,39 @@ struct FasterStringHasher {
 
 class Counter {
  public:
-  Counter(int minimal_frequency) : MinimalFrequncy_(minimal_frequency) {}
-
-  void Up(const std::string& str, int up_number = 1) {
+  int Up(const std::string& str, int up_number = 1) {
     const auto it = CountMap_.find(str);
     const int old_number = it == CountMap_.end() ? 0 : it->second;
     const int new_number = old_number + up_number;
     CountMap_.insert_or_assign(std::move(it), str, new_number);
+    return old_number;
+  }
+
+  int GetCount(const std::string& str) const {
+    const auto it = CountMap_.find(str);
+    return it != CountMap_.end() ? it->second : 0;
+  }
+
+ private:
+  std::unordered_map<std::string, int, FasterStringHasher> CountMap_;
+};
+
+class CounterWithFrequncyFiltering : public Counter {
+ public:
+  CounterWithFrequncyFiltering(int minimal_frequency)
+      : MinimalFrequncy_(minimal_frequency) {}
+
+  int Up(const std::string& str, int up_number = 1) {
+    const int old_number = Counter::Up(str, up_number);
+    const int new_number = old_number + up_number;
     if (old_number < MinimalFrequncy_ && new_number >= MinimalFrequncy_) {
       FrequentWords_.push_back(str);
     }
   }
 
-  const auto& GetFrequentWords() const noexcept { return FrequentWords_; }
-
-  int GetCount(const std::string& str) const {
-    return CountMap_.find(str)->second;
-  }
+  const auto& GetFrequentWords() const { return FrequentWords_; }
 
  private:
-  std::unordered_map<std::string, int, FasterStringHasher> CountMap_;
   std::vector<std::string> FrequentWords_;
   const int MinimalFrequncy_;
 };
@@ -59,28 +73,16 @@ std::vector<std::string> Split(const std::string& str) {
   return result;
 }
 
-template <typename TCallback>
-void GetFrequentWordsFromStream(std::istream& input, int frequent_barrier,
-                                int skip_first_in_line,
-                                TCallback frequent_words_callback) {
+template <typename TVisitor>
+void ProcessWordsFromStream(std::istream& input, int skip_first_in_line,
+                            TVisitor visitor) {
   std::string line;
-  std::string tmp_buffer;
-  Counter word_counter(frequent_barrier);
   while (std::getline(input, line)) {
     const auto splitted = Split(line);
     for (int i = skip_first_in_line; i < splitted.size(); ++i) {
-      word_counter.Up(splitted[i]);
-      if (i > skip_first_in_line) {
-        tmp_buffer = "";
-        tmp_buffer += splitted[i - 1];
-        tmp_buffer += '|';
-        tmp_buffer += splitted[i];
-        word_counter.Up(std::move(tmp_buffer));
-      }
+      visitor.OnWord(splitted[i]);
     }
-  }
-  for (const auto& it : word_counter.GetFrequentWords()) {
-    frequent_words_callback(it, word_counter.GetCount(it));
+    visitor.OnNewDocument();
   }
 }
 
@@ -88,7 +90,9 @@ bool TryFillParams(int argc, const char** argv, int* out_frequency,
                    int* out_skip_first) {
   constexpr int kDefaultMinimalWordCount = 1000;
 
-  args::ArgumentParser parser("Count words and bigrams and save counts");
+  args::ArgumentParser parser(
+      "Count words and bigrams and save counts for words and number of "
+      "documents containing this word");
   args::HelpFlag help(parser, "help", "Display this help", {'h', "help"});
   args::ValueFlag<int> skip(parser, "skip",
                             "How many words skip in the beginning of the line",
@@ -118,6 +122,34 @@ bool TryFillParams(int argc, const char** argv, int* out_frequency,
   return true;
 }
 
+template <typename TWordCounter, typename TDocumentContainingWordCounter,
+          typename TDocumentWordsSet>
+struct CountingVisitor {
+  TWordCounter& WordCounter;
+  TDocumentContainingWordCounter& DocumentContainingWordCounter;
+  TDocumentWordsSet& DocumentWordsSet;
+
+  CountingVisitor(
+      TWordCounter& word_counter,
+      TDocumentContainingWordCounter& document_containig_word_counter,
+      TDocumentWordsSet& document_words_set)
+      : WordCounter(word_counter),
+        DocumentContainingWordCounter(document_containig_word_counter),
+        DocumentWordsSet(document_words_set) {}
+
+  void OnNewDocument() {
+    for (const auto& word : DocumentWordsSet) {
+      DocumentContainingWordCounter.Up(word);
+    }
+    DocumentWordsSet.clear();
+  }
+
+  void OnWord(const std::string& word) {
+    WordCounter.Up(word);
+    DocumentWordsSet.insert(word);
+  }
+};
+
 int main(int argc, const char** argv) {
   std::ios::sync_with_stdio(false);
   std::cin.tie(nullptr);
@@ -125,9 +157,18 @@ int main(int argc, const char** argv) {
   if (!TryFillParams(argc, argv, &minimal_frequency, &skip_first)) {
     return 1;
   }
-  GetFrequentWordsFromStream(std::cin, minimal_frequency, skip_first,
-                             [](const std::string& word, int count) {
-                               std::cout << word << " " << count << "\n";
-                             });
+  CounterWithFrequncyFiltering frequent_words_counter(minimal_frequency);
+  Counter documents_containing_word_counter;
+  std::unordered_set<std::string, FasterStringHasher> current_document_words;
+  CountingVisitor counting_visitor(frequent_words_counter,
+                                   documents_containing_word_counter,
+                                   current_document_words);
+
+  ProcessWordsFromStream(std::cin, skip_first, std::move(counting_visitor));
+
+  for (const auto& word : frequent_words_counter.GetFrequentWords()) {
+    std::cout << word << " " << frequent_words_counter.GetCount(word) << " "
+              << documents_containing_word_counter.GetCount(word) << "\n";
+  }
   return 0;
 }
