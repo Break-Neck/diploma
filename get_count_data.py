@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import argparse
 import sys
 import itertools
 import collections
@@ -10,12 +11,18 @@ def get_good_words(good_words_file_path):
         return set(line.split()[0] for line in fl)
 
 
-def main():
-    if len(sys.argv) != 2 or sys.argv[1] == '-h':
-        print('Need 1 argument: path to file with good words')
-        sys.exit(1)
+def get_parser():
+    parser = argparse.ArgumentParser(description='Leave only important lemmas/word-like object. ')
+    parser.add_argument('words_path', help='Path to file with good words. ')
+    parser.add_argument('-p', help='Don\'t compress records with same dates into one', action='store_false', dest='compress')
+    return parser
 
-    good_words = get_good_words(sys.argv[1])
+
+def main():
+    parser = get_parser()
+    args = parser.parse_args()
+
+    good_words = get_good_words(args.words_path)
     current_date = None
     current_counts = collections.Counter()
 
@@ -30,7 +37,7 @@ def main():
     for line in sys.stdin:
         split = line.strip().split()
         date, words = split[0], split[1:]
-        if current_date != date:
+        if not args.compress or current_date != date:
             emit()
             current_date = date
             current_counts.clear()
