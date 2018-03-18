@@ -31,11 +31,11 @@ model.add(keras.layers.Dropout(0.3))
 model.add(keras.layers.Dense(2, activation='softmax'))
 model.compile(loss='binary_crossentropy', optimizer='nadam', metrics=['accuracy'])
 
-batch_size = 128
+batch_size = 256
 epochs = 5000
 
 callbacks = [
-    keras.callbacks.ModelCheckpoint(filepath='nn/2_dense_03_drop_model.hdf5', save_best_only=True, period=1),
+    keras.callbacks.ModelCheckpoint(filepath='nn/2_dense_03_drop_model.hdf5', save_best_only=True, period=10),
     keras.callbacks.ReduceLROnPlateau(factor=0.5, patience=20, verbose=1, cooldown=10),
     keras.callbacks.CSVLogger('nn/2_dense_03_drop_model.csv'),
     keras.callbacks.EarlyStopping(patience=50)
