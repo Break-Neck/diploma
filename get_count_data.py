@@ -33,7 +33,7 @@ def main():
 
     def emit():
         if current_date is not None:
-            print(' '.join([current_date] + ['{}:{}'.format(word, count if not parser.mean else count / current_lines_count)
+            print(' '.join([current_date] + ['{}:{}'.format(word, count if not args.mean else count / current_lines_count)
                                              for word, count in current_counts.items()]))
 
     for line in sys.stdin:

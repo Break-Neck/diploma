@@ -37,7 +37,7 @@ def main():
         for i, line in enumerate(fl):
             words_counts = line.split()[1:]
             for word, count_str in (tuple(pair.split(':')) for pair in words_counts):
-                result_array[i][words_indexes[word]] = int(count_str)
+                result_array[i][words_indexes[word]] = float(count_str)
     if args.tf_idf:
         df_mul = np.log(total_lines / document_frequencies)
         for i in range(result_array.shape[0]):
