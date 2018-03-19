@@ -15,6 +15,7 @@ def get_parser():
     parser = argparse.ArgumentParser(description='Leave only important lemmas/word-like object. ')
     parser.add_argument('words_path', help='Path to file with good words. ')
     parser.add_argument('-p', help='Don\'t compress records with same dates into one', action='store_false', dest='compress')
+    parser.add_argument('-m', help='Print mean counts per day', action='store_true', dest='mean')
     return parser
 
 
@@ -24,6 +25,7 @@ def main():
 
     good_words = get_good_words(args.words_path)
     current_date = None
+    current_lines_count = 0
     current_counts = collections.Counter()
 
     def bgram_iterator(words):
@@ -31,7 +33,7 @@ def main():
 
     def emit():
         if current_date is not None:
-            print(' '.join([current_date] + ['{}:{}'.format(word, count)
+            print(' '.join([current_date] + ['{}:{}'.format(word, count if not parser.mean else count / current_lines_count)
                                              for word, count in current_counts.items()]))
 
     for line in sys.stdin:
@@ -40,8 +42,10 @@ def main():
         if not args.compress or current_date != date:
             emit()
             current_date = date
+            current_lines_count = 0
             current_counts.clear()
         current_counts.update(bgram_iterator(words))
+        current_lines_count += 1
     emit()
 
 
