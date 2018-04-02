@@ -20,6 +20,28 @@ struct FasterStringHasher {
   }
 };
 
+template <typename T>
+class Counter {
+ public:
+  int Up(const T& obj, int up_number = 1) {
+    const auto it = CountMap_.find(obj);
+    const int old_number = it == CountMap_.end() ? 0 : it->second;
+    const int new_number = old_number + up_number;
+    CountMap_.insert_or_assign(std::move(it), obj, new_number);
+    return old_number;
+  }
+
+  int GetCount(const T& obj) const {
+    const auto it = CountMap_.find(obj);
+    return it != CountMap_.end() ? it->second : 0;
+  }
+
+  const auto& GetCountingContainer() const noexcept { return CountMap_; }
+
+ private:
+  std::unordered_map<T, int, FasterStringHasher> CountMap_;
+};
+
 auto GetGoodWords(std::istream& input) {
   std::vector<std::string> good_words;
   std::string line;
@@ -44,26 +66,38 @@ void SplitIter(std::string_view str, TCallback callback) {
 }
 
 template <typename TWordsSet>
-auto GetCountsOfWords(std::string_view str, const TWordsSet& good_words) {
-  std::unordered_map<std::string_view, int, FasterStringHasher> word_count;
-  SplitIter(str, [&word_count, &good_words](std::string_view word) {
-    if (!good_words.count(word)) {
-      return;
+auto GetCountsOfWObjs(std::string_view str, const TWordsSet& good_words) {
+  Counter<std::string_view> wobj_count;
+  std::optional<std::string_view> last_word = std::nullopt;
+  std::string temp_buffer;
+  temp_buffer.reserve(100);
+  SplitIter(str, [&wobj_count, &good_words, &last_word,
+                  &temp_buffer](std::string_view word) {
+    if (good_words.count(word)) {
+      wobj_count.Up(word);
+      if (last_word && good_words.count(*last_word)) {
+        temp_buffer = *last_word;
+        temp_buffer += "|";
+        temp_buffer += word;
+        const auto it = good_words.find({temp_buffer});
+        if (it != good_words.end()) {
+          wobj_count.Up(*it);
+        }
+      }
     }
-    const auto it = word_count.find(word);
-    const int old_value = it == word_count.end() ? 0 : it->second;
-    word_count.insert_or_assign(std::move(it), std::move(word), old_value + 1);
+    last_word = std::move(word);
   });
-  return word_count;
+  return wobj_count;
 }
 
 template <typename TWordsSet, typename TCallback>
-void ProcessLemmasLines(std::istream& input, const TWordsSet& good_words, TCallback callback) {
+void ProcessLemmasLines(std::istream& input, const TWordsSet& good_words,
+                        TCallback callback) {
   std::string line;
   while (std::getline(input, line)) {
     const int lemmas_start_in_string = line.find(' ') + 1;
     const auto words_count =
-        GetCountsOfWords({line.data() + lemmas_start_in_string}, good_words);
+        GetCountsOfWObjs({line.data() + lemmas_start_in_string}, good_words);
     callback(std::string_view(line.data(), lemmas_start_in_string - 1),
              words_count);
   }
@@ -87,7 +121,7 @@ int main(int argc, char** argv) {
       std::cin, good_words_set,
       [](std::string_view date_string_view, const auto& words_count) {
         std::cout << date_string_view << " ";
-        for (const auto& word_count_pair : words_count) {
+        for (const auto& word_count_pair : words_count.GetCountingContainer()) {
           std::cout << word_count_pair.first << ":" << word_count_pair.second
                     << " ";
         }
