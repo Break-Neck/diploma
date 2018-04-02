@@ -13,7 +13,7 @@ struct FasterStringHasher {
   template <typename TStringType>
   size_t operator()(const TStringType& str) const noexcept {
     size_t hash = 0;
-    for (int i = 0; i < str.length(); ++i) {
+    for (size_t i = 0; i < str.length(); ++i) {
       hash = hash * kMultiplier + str[i];
     }
     return hash;
@@ -31,8 +31,8 @@ auto GetGoodWords(std::istream& input) {
 
 template <typename TCallback>
 void SplitIter(std::string_view str, TCallback callback) {
-  int start = 0;
-  for (int i = 0; i < str.length(); ++i) {
+  size_t start = 0;
+  for (size_t i = 0; i < str.length(); ++i) {
     if (std::isspace(str[i]) && start < i) {
       callback(std::string_view(str.data() + start, i - start));
       start = i + 1;
