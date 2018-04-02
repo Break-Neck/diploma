@@ -6,6 +6,7 @@ import json
 from nltk.tokenize import word_tokenize
 from nltk import pos_tag
 from nltk.stem import WordNetLemmatizer
+from nltk.corpus import stopwords
 
 __tag_convertion_map = {
     'N' : 'n',
@@ -15,6 +16,7 @@ __tag_convertion_map = {
     'R' : 'r'
 }
 __wnl = WordNetLemmatizer()
+__stopwords = set(stopwords.words('english')) - set(('not',))
 
 
 def apply_not(lemmas, apply_length=2):
@@ -39,7 +41,8 @@ def get_lems(text):
         if tok.endswith("n't"):
             tokens[i] = 'not'
     tagged = pos_tag([tok.lower() for tok in tokens if tok.isalnum()])
-    return apply_not(__wnl.lemmatize(tok, convert_tags(tag)) for tok, tag in tagged)
+    lemmatized = (__wnl.lemmatize(tok, convert_tags(tag)) for tok, tag in tagged)
+    return apply_not(x for x in lemmatized if x not in __stopwords)
 
 
 if __name__ == '__main__':
