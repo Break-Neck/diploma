@@ -12,14 +12,14 @@ struct FasterStringHasher {
 
   size_t operator()(const std::string& str) const noexcept {
     size_t hash = 0;
-    for (int i = 0; i < str.length(); ++i) {
+    for (size_t i = 0; i < str.length(); ++i) {
       hash = hash * kMultiplier + str[i];
     }
     return hash;
   }
 };
 
-class Counter {
+class StringCounter {
  public:
   int Up(const std::string& str, int up_number = 1) {
     const auto it = CountMap_.find(str);
@@ -38,17 +38,18 @@ class Counter {
   std::unordered_map<std::string, int, FasterStringHasher> CountMap_;
 };
 
-class CounterWithFrequncyFiltering : public Counter {
+class StringCounterWithFrequncyFiltering : public StringCounter {
  public:
-  CounterWithFrequncyFiltering(int minimal_frequency)
+  StringCounterWithFrequncyFiltering(int minimal_frequency)
       : MinimalFrequncy_(minimal_frequency) {}
 
   int Up(const std::string& str, int up_number = 1) {
-    const int old_number = Counter::Up(str, up_number);
+    const int old_number = StringCounter::Up(str, up_number);
     const int new_number = old_number + up_number;
     if (old_number < MinimalFrequncy_ && new_number >= MinimalFrequncy_) {
       FrequentWords_.push_back(str);
     }
+    return old_number;
   }
 
   const auto& GetFrequentWords() const { return FrequentWords_; }
@@ -59,9 +60,9 @@ class CounterWithFrequncyFiltering : public Counter {
 };
 
 std::vector<std::string> Split(const std::string& str) {
-  int start = 0;
+  size_t start = 0;
   std::vector<std::string> result;
-  for (int i = 0; i < str.length(); ++i) {
+  for (size_t i = 0; i < str.length(); ++i) {
     if (std::isspace(str[i]) && start < i) {
       result.push_back(str.substr(start, i - start));
       start = i + 1;
@@ -79,9 +80,9 @@ void ProcessWordsFromStream(std::istream& input, int skip_first_in_line,
   std::string line;
   while (std::getline(input, line)) {
     const auto splitted = Split(line);
-    for (int i = skip_first_in_line; i < splitted.size(); ++i) {
+    for (size_t i = skip_first_in_line; i < splitted.size(); ++i) {
       visitor.OnWordObject(splitted[i]);
-      if (i > skip_first_in_line) {
+      if (i > static_cast<size_t>(skip_first_in_line)) {
         visitor.OnWordObject(splitted[i - 1] + '|' + splitted[i]);
       }
     }
@@ -103,7 +104,7 @@ bool TryFillParams(int argc, const char** argv, int* out_frequency,
   args::ValueFlag<int> frequency(
       parser, "frequency",
       "Minimal frequency for a word or bigram to be printed", {'f', "freq"},
-      1000);
+      kDefaultMinimalWordCount);
 
   try {
     parser.ParseCLI(argc, argv);
@@ -160,8 +161,8 @@ int main(int argc, const char** argv) {
   if (!TryFillParams(argc, argv, &minimal_frequency, &skip_first)) {
     return 1;
   }
-  CounterWithFrequncyFiltering frequent_words_counter(minimal_frequency);
-  Counter documents_containing_word_counter;
+  StringCounterWithFrequncyFiltering frequent_words_counter(minimal_frequency);
+  StringCounter documents_containing_word_counter;
   std::unordered_set<std::string, FasterStringHasher> current_document_words;
   CountingVisitor counting_visitor(frequent_words_counter,
                                    documents_containing_word_counter,
