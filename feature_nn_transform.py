@@ -4,11 +4,13 @@ import itertools
 import os
 import sys
 import logging
+import pickle
+import sklearn
+import sklearn.decomposition
+import sklearn.preprocessing
+import scipy
+import scipy.sparse
 import gc
-
-
-def iterate_bgrams(lemmas_list):
-    return itertools.chain(lemmas_list, ('|'.join(pair) for pair in zip(lemmas_list[:-1], lemmas_list[1:])))
 
 
 def date_from_course_file_string(date_str):
@@ -18,13 +20,17 @@ def date_from_course_file_string(date_str):
 def date_from_data_file_string(date_str):
     return datetime.datetime.strptime(date_str, '%Y-%m-%d').date()
 
+def iterate_wobj_counts(wobj_data):
+    for wdata in wobj_data:
+        wobj, wobj_count = tuple(wdata.split(':'))
+        yield wobj, float(wobj_count)
 
 class FeatureTfIdfTransformer(object):
     __up_y = np.array([1., 0.])
     __down_y = np.array([0., 1.])
     __stagnate_y = np.array([.5, .5])
 
-    def __init__(self, data_file_path, good_words_path, course_file_path, validate_size, total_document_count=None,
+    def __init__(self, data_file_path, good_words_path, course_file_path, train_part, validate_part, total_document_count=None,
                  standartize_path=None):
         self.data_file_path = data_file_path
         self.word2index = dict()
@@ -33,7 +39,7 @@ class FeatureTfIdfTransformer(object):
         else:
             logging.info('Start counting documents')
             with open(data_file_path) as fl:
-                self.total_document_count = sum(1 for _ in fl) - validate_size
+                self.total_document_count = sum(1 for _ in fl)
             logging.info('Finished counting documents')
         self.index2idf_array = None
         logging.info('Start initialization of words statistics')
@@ -42,7 +48,9 @@ class FeatureTfIdfTransformer(object):
         logging.debug('Start reading of courses data')
         self.dates2change = self._get_courses(course_file_path)
         logging.debug('Finished initialization of words statistics')
-        self.validate_size = validate_size
+        self.train_size = int(self.total_document_count * train_part)
+        self.validate_size = int(self.total_document_count * validate_size)
+        self.preprocessing_pipeline = None
         self.standartize_mean = 0
         self.standartize_std = 1
         if standartize_path is None:
@@ -155,7 +163,7 @@ class FeatureTfIdfTransformer(object):
                 gc.collect()
 
     def iterate_train_data(self, batch_size, gc_period=None):
-        data_iterator = self.iterate_data(self.validate_size)
+        data_iterator = self.iterate_data(line_count=self.train_size)
         for batch in self._iterate_processed_data(data_iterator, batch_size, gc_period):
             logging.debug('Train batch generated')
             yield batch
@@ -169,4 +177,63 @@ class FeatureTfIdfTransformer(object):
     @property
     def vector_size(self):
         return len(self.word2index)
+
+
+class CountTruncatedVectorizer(object):
+    __up_y = np.array([1., 0.])
+    __down_y = np.array([0., 1.])
+    __stagnate_y = np.array([.5, .5])
+
+    __DEFAULT_X_NAME = 'X_matrix'
+    __DEFAULT_DATES_NAME = 'dates'
+
+    def __init__(self, data_file_path, good_words_path, course_file_path, train_part, validate_part, X_path=None):
+        self.data_file_path = data_file_path
+        self.wobj2num = self._get_good_words_encoding(good_words_path)
+        self.dates2change = self._get_courses(course_file_path)
+        if X_path is None:
+            logging.info('Start matrix loading')
+            self.X, self.X_dates = self.create_matrix()
+            logging.info('Matrix loaded')
+        else:
+            self.load_matrix(X_path)
+
+    @staticmethod
+    def _get_good_words_encoding(good_words_path):
+        with open(good_words_path) as fl:
+            return {line.split()[0]:i for i, line in enumerate(fl)}
+
+    @staticmethod
+    def _get_courses(file_path):
+        dates2change = dict()
+        with open(file_path) as fl:
+            next(fl)
+            for line in fl:
+                splitted = line.strip().split(',')
+                date = date_from_course_file_string(splitted[0])
+                absolute_change = float(splitted[2])
+                dates2change[date] = absolute_change
+        return dates2change
+
+    def create_matrix(self):
+        X_data, X_row_indexes, X_column_indexes = [], [], []
+        dates = []
+        with open(self.data_file_path) as data_file:
+            for line_number, line in enumerate(data_file):
+                splitted = line.strip().split()
+                dates.append(date_from_data_file_string(splitted[0]))
+                for wobj, wobj_count in iterate_wobj_counts(splitted[1:]):
+                    X_data.append(wobj_count)
+                    X_row_indexes.append(line_number)
+                    X_column_indexes.append(self.wobj2num[wobj])
+        X = scipy.sparse.coo_matrix((X_data, (X_row_indexes, X_column_indexes))).tocsr()
+        return X, dates
+
+    def save_matrix(self, path, X_name=__DEFAULT_X_NAME, dates_name=__DEFAULT_DATES_NAME):
+        scipy.sparse.save_npz(os.path.join(path, X_name), self.X)
+        pickle.dump(self.X_dates, os.path.join(path, dates_name))
+
+    def load_matrix(self, path, X_name=__DEFAULT_X_NAME, dates_name=__DEFAULT_DATES_NAME):
+        self.X = scipy.sparse.load_npz(ps.path.join(path, X_name))
+        self.X_dates = pickle.load(os.path.join(path, dates_name))
 
