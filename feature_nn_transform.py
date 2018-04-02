@@ -8,6 +8,7 @@ import pickle
 import sklearn
 import sklearn.decomposition
 import sklearn.preprocessing
+import sklearn.random_projection
 import scipy
 import scipy.sparse
 import gc
@@ -15,7 +16,6 @@ import gc
 
 def date_from_course_file_string(date_str):
     return datetime.datetime.strptime(date_str, '%d.%m.%Y').date()
-
 
 def date_from_data_file_string(date_str):
     return datetime.datetime.strptime(date_str, '%Y-%m-%d').date()
@@ -184,24 +184,73 @@ class CountTruncatedVectorizer(object):
     __down_y = np.array([0., 1.])
     __stagnate_y = np.array([.5, .5])
 
-    __DEFAULT_X_NAME = 'X_matrix'
-    __DEFAULT_DATES_NAME = 'dates'
+    __DEFAULT_DATES_INFO_PATH = 'dates_info.pl'
 
-    def __init__(self, data_file_path, good_words_path, course_file_path, train_part, validate_part, X_path=None):
+    def __init__(self, data_file_path, good_words_path, course_file_path, train_part, validate_part, dates_lines_starts_load=None):
         self.data_file_path = data_file_path
         self.wobj2num = self._get_good_words_encoding(good_words_path)
         self.dates2change = self._get_courses(course_file_path)
-        if X_path is None:
-            logging.info('Start matrix loading')
-            self.X, self.X_dates = self.create_matrix()
-            logging.info('Matrix loaded')
+        if dates_lines_starts_load is None:
+            logging.info('Start dates info retrieving')
+            self.all_dates, self.dates_lines, self.total_lines = self._get_dates_info()
+            logging.info('Dates info received')
         else:
-            self.load_matrix(X_path)
+            load_path = dates_lines_starts_load if isinstance(dates_lines_starts_load, str) else self.__DEFAULT_DATES_INFO_PATH
+            self.load_dates_info(load_path)
+        self.random_projection = self._get_random_projection()
+        self.train_dates = int(len(self.all_dates) * train_part)
+        self.validation_date = int(len(self.all_dates) * validate_part)
+
+    def _read_n_records(self, file_object, n_lines):
+        X = np.zeros((n_lines, self.random_projection.n_components_))
+        X_line = np.zeros(len(self.wobj2num))
+        dates = set()
+        for i, line in itertools.islice(enumerate(file_object), n_lines):
+            dates.add(line.split()[0])
+            for wobj, wobj_count in iterate_wobj_counts(line.split()[1:]):
+                X_line[self.wobj2num[wobj]] = wobj_count
+            X[i] = self.random_projection.transform(X_line)
+            X_line.fill(0)
+        assert len(dates) == 1
+        return X
+
+    def _iterate_chunk(self, start_date_index, dates_count):
+        with open(self.data_file_path) as fl:
+            for _ in range(self.dates_lines[start_date_index]):
+                fl.readline()
+            start_seek_position = fl.tell()
+            while True:
+                for date_index in range(start_date_index, start_date_index + dates_count):
+                    if date_index + 1 == len(self.all_dates):
+                        news_count = self.total_lines - self.dates_lines[date_index]
+                    else:
+                        news_count = self.dates_lines[date_index + 1] - self.dates_lines[date_index]
+                    X = self._read_n_records(fl, news_count)
+                    if self.dates2change[self.all_dates[date_index]] < -.5:
+                        y = self.__down_y
+                    elif self.dates2change[self.all_dates[date_index]] > .5:
+                        y = self.__up_y
+                    else:
+                        y = self.__stagnate_y
+                    yield X, y
+                fl.seek(start_seek_position)
+
+    def iterate_train_chunk(self):
+        return self._iterate_chunk(0, self.train_dates)
+
+    def iterate_validation_chunk(self):
+        return self._iterate_chunk(self.train_dates, self.validation_dates)
 
     @staticmethod
     def _get_good_words_encoding(good_words_path):
         with open(good_words_path) as fl:
             return {line.split()[0]:i for i, line in enumerate(fl)}
+
+    def _get_random_projection(self):
+        proj = sklearn.random_projection.SparseRandomProjection(random_state=42)
+        temp_mat = scipy.sparse.eye(self.total_lines, len(self.wobj2num))
+        proj.fit(temp_mat)
+        return proj
 
     @staticmethod
     def _get_courses(file_path):
@@ -215,25 +264,24 @@ class CountTruncatedVectorizer(object):
                 dates2change[date] = absolute_change
         return dates2change
 
-    def create_matrix(self):
-        X_data, X_row_indexes, X_column_indexes = [], [], []
-        dates = []
-        with open(self.data_file_path) as data_file:
-            for line_number, line in enumerate(data_file):
-                splitted = line.strip().split()
-                dates.append(date_from_data_file_string(splitted[0]))
-                for wobj, wobj_count in iterate_wobj_counts(splitted[1:]):
-                    X_data.append(wobj_count)
-                    X_row_indexes.append(line_number)
-                    X_column_indexes.append(self.wobj2num[wobj])
-        X = scipy.sparse.coo_matrix((X_data, (X_row_indexes, X_column_indexes))).tocsr()
-        return X, dates
+    def _get_dates_info(self):
+        dates = set()
+        dates_lines = []
+        line_number = 0
+        with open(self.data_file_path) as fl:
+            for line in fl:
+                date = date_from_data_file_string(line.split()[0])
+                if date not in dates:
+                    dates_lines.append(line_number)
+                    dates.add(date)
+                line_number += 1
+        return sorted(dates), dates_lines, line_number
 
-    def save_matrix(self, path, X_name=__DEFAULT_X_NAME, dates_name=__DEFAULT_DATES_NAME):
-        scipy.sparse.save_npz(os.path.join(path, X_name), self.X)
-        pickle.dump(self.X_dates, os.path.join(path, dates_name))
+    def save_dates_info(self, save_path=__DEFAULT_DATES_INFO_PATH):
+        with open(save_path, 'wb') as fl:
+            pickle.dump((self.all_dates, self.dates_lines, self.total_lines), fl)
 
-    def load_matrix(self, path, X_name=__DEFAULT_X_NAME, dates_name=__DEFAULT_DATES_NAME):
-        self.X = scipy.sparse.load_npz(ps.path.join(path, X_name))
-        self.X_dates = pickle.load(os.path.join(path, dates_name))
+    def load_dates_info(self, load_path=__DEFAULT_DATES_INFO_PATH):
+        with open(load_path, 'rb') as fl:
+            self.all_dates, self.dates_lines, self.total_lines = pickle.load(fl)
 
