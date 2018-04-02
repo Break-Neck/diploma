@@ -24,7 +24,7 @@ auto GetGoodWords(std::istream& input) {
   std::vector<std::string> good_words;
   std::string line;
   while (std::getline(input, line)) {
-    good_words.emplace_back(line.substr(line.find(' ')));
+    good_words.emplace_back(line.substr(0, line.find(' ')));
   }
   return good_words;
 }
