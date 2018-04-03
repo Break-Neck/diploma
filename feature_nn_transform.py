@@ -8,7 +8,6 @@ import pickle
 import sklearn
 import sklearn.decomposition
 import sklearn.preprocessing
-import sklearn.random_projection
 import scipy
 import scipy.sparse
 import gc
@@ -180,13 +179,13 @@ class FeatureTfIdfTransformer(object):
 
 
 class CountTruncatedVectorizer(object):
-    __up_y = np.array([1., 0.])
-    __down_y = np.array([0., 1.])
-    __stagnate_y = np.array([.5, .5])
+    __up_y = np.array([1])
+    __down_y = np.array([0])
 
     __DEFAULT_DATES_INFO_PATH = 'dates_info.pl'
+    __DEFAULT_SCALER_PATH = 'nn_scaler.pl'
 
-    def __init__(self, data_file_path, good_words_path, course_file_path, train_part, validate_part, dates_lines_starts_load=None):
+    def __init__(self, data_file_path, good_words_path, course_file_path, train_part, validate_part, dates_lines_starts_load=None, scaler_start_load=None):
         self.data_file_path = data_file_path
         self.wobj2num = self._get_good_words_encoding(good_words_path)
         self.dates2change = self._get_courses(course_file_path)
@@ -197,24 +196,28 @@ class CountTruncatedVectorizer(object):
         else:
             load_path = dates_lines_starts_load if isinstance(dates_lines_starts_load, str) else self.__DEFAULT_DATES_INFO_PATH
             self.load_dates_info(load_path)
-        self.random_projection = self._get_random_projection()
         self.train_dates = int(len(self.all_dates) * train_part)
-        self.validation_date = int(len(self.all_dates) * validate_part)
+        self.validation_dates = int(len(self.all_dates) * validate_part)
+        if scaler_start_load is None:
+            logging.info('Start scaling calculation')
+            self.scaler = self._get_scaler()
+            logging.info('Finished scaling calculation')
+        else:
+            load_path = scaler_start_load if isinstance(scaler_start_load, str) else self.__DEFAULT_SCALER_PATH
+            self.load_scaler(load_path)
 
     def _read_n_records(self, file_object, n_lines):
-        X = np.zeros((n_lines, self.random_projection.n_components_))
-        X_line = np.zeros(len(self.wobj2num))
+        X = np.zeros((n_lines, self.vector_length))
         dates = set()
         for i, line in itertools.islice(enumerate(file_object), n_lines):
-            dates.add(line.split()[0])
-            for wobj, wobj_count in iterate_wobj_counts(line.split()[1:]):
-                X_line[self.wobj2num[wobj]] = wobj_count
-            X[i] = self.random_projection.transform(X_line)
-            X_line.fill(0)
+            splitted = line.split()
+            dates.add(splitted[0])
+            for wobj, wobj_count in iterate_wobj_counts(splitted[1:]):
+                X[i][self.wobj2num[wobj]] = wobj_count
         assert len(dates) == 1
         return X
 
-    def _iterate_chunk(self, start_date_index, dates_count):
+    def _iterate_chunk(self, start_date_index, dates_count, scale=False):
         with open(self.data_file_path) as fl:
             for _ in range(self.dates_lines[start_date_index]):
                 fl.readline()
@@ -226,31 +229,35 @@ class CountTruncatedVectorizer(object):
                     else:
                         news_count = self.dates_lines[date_index + 1] - self.dates_lines[date_index]
                     X = self._read_n_records(fl, news_count)
-                    if self.dates2change[self.all_dates[date_index]] < -.5:
+                    if self.dates2change[self.all_dates[date_index]] < 0:
                         y = self.__down_y
-                    elif self.dates2change[self.all_dates[date_index]] > .5:
-                        y = self.__up_y
                     else:
-                        y = self.__stagnate_y
-                    yield X, y
+                        y = self.__up_y
+                    if scale:
+                        self.scaler.transform(X)
+                    yield np.expand_dims(X, 0), np.expand_dims(y, 0)
                 fl.seek(start_seek_position)
 
-    def iterate_train_chunk(self):
-        return self._iterate_chunk(0, self.train_dates)
+    def iterate_train_chunk(self, scale=True):
+        return self._iterate_chunk(0, self.train_dates, scale)
+    
+    def _get_scaler(self):
+        scaler = sklearn.preprocessing.StandardScaler()
+        for chunk in itertools.islice(self.iterate_train_chunk(False), self.train_dates):
+            scaler.partial_fit(np.squeeze(chunk[0]))
+        return scaler
 
-    def iterate_validation_chunk(self):
-        return self._iterate_chunk(self.train_dates, self.validation_dates)
+    def iterate_validation_chunk(self, scale=True):
+        return self._iterate_chunk(self.train_dates, self.validation_dates, scale)
+    
+    @property
+    def vector_length(self):
+        return len(self.wobj2num)
 
     @staticmethod
     def _get_good_words_encoding(good_words_path):
         with open(good_words_path) as fl:
             return {line.split()[0]:i for i, line in enumerate(fl)}
-
-    def _get_random_projection(self):
-        proj = sklearn.random_projection.SparseRandomProjection(random_state=42)
-        temp_mat = scipy.sparse.eye(self.total_lines, len(self.wobj2num))
-        proj.fit(temp_mat)
-        return proj
 
     @staticmethod
     def _get_courses(file_path):
@@ -284,4 +291,12 @@ class CountTruncatedVectorizer(object):
     def load_dates_info(self, load_path=__DEFAULT_DATES_INFO_PATH):
         with open(load_path, 'rb') as fl:
             self.all_dates, self.dates_lines, self.total_lines = pickle.load(fl)
+
+    def save_scaler(self, save_path=__DEFAULT_SCALER_PATH):
+        with open(save_path, 'wb') as fl:
+            pickle.dump(self.scaler, fl)
+
+    def load_scaler(self, load_path=__DEFAULT_SCALER_PATH):
+        with open(load_path, 'rb') as fl:
+            self.scaler = pickle.load(fl)
 
