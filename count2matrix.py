@@ -3,6 +3,8 @@
 import sys
 import argparse
 import numpy as np
+import scipy.sparse
+import gc
 
 
 def get_parser():
@@ -13,10 +15,45 @@ def get_parser():
         'counts_path', help='Path to file with counted wobject.')
     parser.add_argument(
         'output_path', help='Path to file to save matrix into. ')
-    parser.add_argument('--tf-idf', help='Calculate tf-idf matrix (word file need to contain document frequencies in 3rd column)',
-                        action='store_true', dest='tf_idf')
+    parser.add_argument('-s', help='Produce sparse matrix', action='store_true', dest='sparse')
     return parser
 
+
+class NumPyMatrixConsumer:
+    def __init__(self, shape):
+        self.shape = shape
+        self.matrix = np.zeros(shape)
+        self.current_row = 0
+
+    def consume(self, wobj_index, value):
+        self.matrix[current_row][wobj_index] = value
+
+    def new_line(self):
+        self.current_row += 1
+
+    def produce(self):
+        return self.matrix
+
+class SparseConsumer:
+    def __init__(self, shape):
+        self.shape = shape
+        self.coo_data = []
+        self.coo_rows = []
+        self.coo_columns = []
+        self.current_row = 0
+
+    def consume(self, wobj_index, value):
+        self.coo_data.append(value)
+        self.coo_rows.append(self.current_row)
+        self.coo_columns.append(wobj_index)
+
+    def new_line(self):
+        self.current_row += 1
+        if self.current_row % 1000 == 0:
+            gc.collect()
+
+    def produce(self):
+        return scipy.sparse.coo_matrix(self.coo_data, (self.coo_rows, self.coo_columns)).tocsr()
 
 def main():
     parser = get_parser()
@@ -26,24 +63,25 @@ def main():
     print('Lines:', total_lines)
     with open(args.words_path) as fl:
         words_indexes = {line.split()[0]: i for i, line in enumerate(fl)}
-        if args.tf_idf:
-            fl.seek(0)
-            document_frequencies = np.array(
-                [int(line.strip().split()[2]) for line in fl])
     print('Word-like objects: ', len(words_indexes))
     print('Total size: ', total_lines * len(words_indexes))
-    result_array = np.zeros((total_lines, len(words_indexes)))
+    if args.sparse:
+        consumer = SparseConsumer((total_lines, len(words_indexes)))
+    else:
+        consumer = NumPyMatrixConsumer((total_lines, len(words_indexes)))
     with open(args.counts_path) as fl:
-        for i, line in enumerate(fl):
+        for line in fl:
             words_counts = line.split()[1:]
             for word, count_str in (tuple(pair.split(':')) for pair in words_counts):
-                result_array[i][words_indexes[word]] = float(count_str)
-    if args.tf_idf:
-        df_mul = np.log(total_lines / document_frequencies)
-        for i in range(result_array.shape[0]):
-            result_array[i] = np.multiply(result_array[i], df_mul)
-    print('Nonzero: ', np.count_nonzero(result_array) / result_array.size)
-    np.save(args.output_path, result_array)
+                consumer.consume(words_indexes[word], float(count_str))
+            consumer.new_line()
+    result_array = consumer.produce()
+    if args.sparse:
+        print('Nonzero: ', result_array.count_nonzero())
+        scipy.sparse.save_npz(args.output_path, result_array)
+    else:
+        print('Nonzero: ', np.count_nonzero(result_array) / result_array.size)
+        np.save(args.output_path, result_array)
 
 
 if __name__ == '__main__':
