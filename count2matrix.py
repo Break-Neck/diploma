@@ -31,7 +31,7 @@ def main():
             document_frequencies = np.array(
                 [int(line.strip().split()[2]) for line in fl])
     print('Word-like objects: ', len(words_indexes))
-    print('Shape: ', total_lines * len(words_indexes))
+    print('Total size: ', total_lines * len(words_indexes))
     result_array = np.zeros((total_lines, len(words_indexes)))
     with open(args.counts_path) as fl:
         for i, line in enumerate(fl):
