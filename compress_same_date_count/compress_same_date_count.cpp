@@ -4,6 +4,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include <deque>
 #include <tuple>
 #include <optional>
 
@@ -99,7 +100,7 @@ class StringViewPool {
   std::string_view Pool(std::string_view) noexcept;
  private:
   std::unordered_set<std::string_view> StringViewsInPool_;
-  std::vector<std::string> StringHolder_;
+  std::deque<std::string> StringHolder_;
 };
 
 std::string_view StringViewPool::Pool(std::string_view sv) noexcept {
@@ -128,22 +129,23 @@ class RecordCompressedPrintingVisitor {
 };
 
 void RecordCompressedPrintingVisitor::PrintRecordsCompressed() const noexcept {
-  if (Counter_.GetCountingContainer().size()) {
+  if (!Counter_.GetCountingContainer().size()) {
     return;
   }
   Output_ << *LastDate_ << " ";
   for (const auto& wobj_count_pair : Counter_.GetCountingContainer()) {
     Output_ << wobj_count_pair.first << ":" << (wobj_count_pair.second / static_cast<double>(RecordsWithSameDateParsed_)) << " ";
   }
+  Output_ << "\n";
 }
 
 void RecordCompressedPrintingVisitor::NextRecord(std::string new_date) noexcept {
   if (LastDate_ && LastDate_ != new_date) {
     PrintRecordsCompressed();
     Counter_.Clear();
-    LastDate_ = new_date;
     RecordsWithSameDateParsed_ = 0;
   }
+  LastDate_ = std::move(new_date);
   ++RecordsWithSameDateParsed_;
 }
 
