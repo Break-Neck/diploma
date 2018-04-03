@@ -52,7 +52,7 @@ class StringCounterWithFrequncyFiltering : public StringCounter {
     return old_number;
   }
 
-  const auto& GetFrequentWords() const { return FrequentWords_; }
+  const auto& GetFrequentWords() const noexcept { return FrequentWords_; }
 
  private:
   std::vector<std::string> FrequentWords_;
