@@ -1,12 +1,12 @@
+#include <deque>
 #include <iostream>
-#include <unordered_set>
-#include <unordered_map>
+#include <optional>
 #include <string>
 #include <string_view>
-#include <vector>
-#include <deque>
 #include <tuple>
-#include <optional>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
 struct FasterStringHasher {
  public:
@@ -39,7 +39,7 @@ class Counter {
   }
 
   const auto& GetCountingContainer() const noexcept { return CountMap_; }
-  
+
   void Clear() noexcept { CountMap_.clear(); }
 
  private:
@@ -77,7 +77,8 @@ inline int StringViewToInt(std::string_view sv) noexcept {
 
 WobjCountPair WobjCountPair::FromStringView(std::string_view sv) {
   const int two_spot_position = sv.find(':');
-  return WobjCountPair{ sv.substr(0, two_spot_position), StringViewToInt(sv.substr(two_spot_position + 1)) };
+  return WobjCountPair{sv.substr(0, two_spot_position),
+                       StringViewToInt(sv.substr(two_spot_position + 1))};
 }
 
 template <typename TRecordVisitor>
@@ -86,10 +87,13 @@ void ProcessLines(std::istream& input, TRecordVisitor visitor) {
   std::vector<std::string_view> splitted_parts;
   while (std::getline(input, line)) {
     splitted_parts.clear();
-    SplitIter(line, [&splitted_parts](const auto&& part) { splitted_parts.push_back(std::move(part)); });
+    SplitIter(line, [&splitted_parts](const auto&& part) {
+      splitted_parts.push_back(std::move(part));
+    });
     visitor.NextRecord(std::string(splitted_parts.front()));
     for (size_t i = 1; i < splitted_parts.size(); ++i) {
-      const WobjCountPair wobj_count = WobjCountPair::FromStringView(std::move(splitted_parts[i]));
+      const WobjCountPair wobj_count =
+          WobjCountPair::FromStringView(std::move(splitted_parts[i]));
       visitor.NextWobjCount(std::move(wobj_count));
     }
   }
@@ -98,6 +102,7 @@ void ProcessLines(std::istream& input, TRecordVisitor visitor) {
 class StringViewPool {
  public:
   std::string_view Pool(std::string_view) noexcept;
+
  private:
   std::unordered_set<std::string_view> StringViewsInPool_;
   std::deque<std::string> StringHolder_;
@@ -107,19 +112,22 @@ std::string_view StringViewPool::Pool(std::string_view sv) noexcept {
   auto pooled_sv = StringViewsInPool_.find(sv);
   if (pooled_sv == StringViewsInPool_.end()) {
     StringHolder_.emplace_back(sv);
-    pooled_sv = StringViewsInPool_.emplace_hint(std::move(pooled_sv), StringHolder_.back());
+    pooled_sv = StringViewsInPool_.emplace_hint(std::move(pooled_sv),
+                                                StringHolder_.back());
   }
   return *pooled_sv;
 }
 
 class RecordCompressedPrintingVisitor {
  public:
-  RecordCompressedPrintingVisitor(std::ostream& output) noexcept : Output_(output) {}
+  RecordCompressedPrintingVisitor(std::ostream& output) noexcept
+      : Output_(output) {}
   void NextRecord(std::string date) noexcept;
   void NextWobjCount(WobjCountPair wcp) {
     Counter_.Up(SVPool_.Pool(wcp.Wobj), wcp.Count);
   }
   void PrintRecordsCompressed() const noexcept;
+
  private:
   std::ostream& Output_;
   int RecordsWithSameDateParsed_{0};
@@ -134,12 +142,16 @@ void RecordCompressedPrintingVisitor::PrintRecordsCompressed() const noexcept {
   }
   Output_ << *LastDate_ << " ";
   for (const auto& wobj_count_pair : Counter_.GetCountingContainer()) {
-    Output_ << wobj_count_pair.first << ":" << (wobj_count_pair.second / static_cast<double>(RecordsWithSameDateParsed_)) << " ";
+    Output_ << wobj_count_pair.first << ":"
+            << (wobj_count_pair.second /
+                static_cast<double>(RecordsWithSameDateParsed_))
+            << " ";
   }
   Output_ << "\n";
 }
 
-void RecordCompressedPrintingVisitor::NextRecord(std::string new_date) noexcept {
+void RecordCompressedPrintingVisitor::NextRecord(
+    std::string new_date) noexcept {
   if (LastDate_ && LastDate_ != new_date) {
     PrintRecordsCompressed();
     Counter_.Clear();
@@ -155,4 +167,3 @@ int main() {
   visitor.PrintRecordsCompressed();
   return 0;
 }
-
