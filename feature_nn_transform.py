@@ -266,7 +266,7 @@ class SparseIterator(BaseDataVectorizer):
         self.sparse_matrix = scipy.sparse.load_npz(sparse_matrix_path)
         self._init_scaler(scaler_load)
         if self.scaler:
-            self.scaler.transform(self.sparse_matrix)
+            self.sparse_matrix = self.scaler.transform(self.sparse_matrix)
 
     def save_scaler(self, save_path=__DEFAULT_SCALER_PATH):
         with open(save_path, 'wb') as fl:
