@@ -264,12 +264,9 @@ class SparseIterator(BaseDataVectorizer):
     def __init__(self, data_file_path, good_words_path, course_file_path, sparse_matrix_path, train_part, validate_part, dates_load=None, scaler_load=None):
         super().__init__(data_file_path, good_words_path, course_file_path, train_part, validate_part, dates_load)
         self.sparse_matrix = scipy.sparse.load_npz(sparse_matrix_path)
-        if scaler_load is not None:
-            load_path = scaler_load if isinstance(scaler_load, str) else self.__DEFAULT_SCALER_PATH
-            self.load_scaler(load_path)
-        else:
-            self.scaler = sklearn.preprocessing.StandardScaler()
-            self.scaler.fit(self.sparse_matrix)
+        self._init_scaler(scaler_load)
+        if self.scaler:
+            self.scaler.transform(self.sparse_matrix)
 
     def save_scaler(self, save_path=__DEFAULT_SCALER_PATH):
         with open(save_path, 'wb') as fl:
@@ -279,14 +276,24 @@ class SparseIterator(BaseDataVectorizer):
         with open(load_path, 'rb') as fl:
             self.scaler = pickle.load(fl)
 
+    def _init_scaler(self, scaler_load):
+        if scaler_load is None:
+            self.scaler = sklearn.preprocessing.MaxAbsScaler(copy=False)
+            self.scaler.fit(self.sparse_matrix)
+        elif scaler_load:
+            load_path = scaler_load if isinstance(scaler_load, str) else self.__DEFAULT_SCALER_PATH
+            self.load_scaler(load_path)
+        else:
+            self.scaler = None
+
     def _iterate_chunk(self, start_date_index, dates_count, scale=False):
         while True:
             for date_index in range(start_date_index, start_date_index + dates_count):
                 news_count = self._get_news_count_for_date(date_index)
                 X = self.sparse_matrix[self.dates_lines[date_index]:self.dates_lines[date_index] + news_count].toarray()
                 y = self._get_y_by_date(date_index)
-                if scale:
-                    X = self.scaler.transform(X, copy=False)
+                if not scale and self.scaler:
+                    X = self.scaler.inverse_transform(X)
                 yield np.expand_dims(X, 0), y
 
 
