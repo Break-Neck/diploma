@@ -8,7 +8,6 @@ import pickle
 import sklearn
 import sklearn.decomposition
 import sklearn.preprocessing
-import sklearn.random_projection
 import scipy
 import scipy.sparse
 import gc
@@ -178,79 +177,34 @@ class FeatureTfIdfTransformer(object):
     def vector_size(self):
         return len(self.word2index)
 
-
-class CountTruncatedVectorizer(object):
-    __up_y = np.array([1., 0.])
-    __down_y = np.array([0., 1.])
-    __stagnate_y = np.array([.5, .5])
-
+class BaseDataVectorizer:
     __DEFAULT_DATES_INFO_PATH = 'dates_info.pl'
 
-    def __init__(self, data_file_path, good_words_path, course_file_path, train_part, validate_part, dates_lines_starts_load=None):
+    __up_y = np.array([1])
+    __down_y = np.array([0])
+
+    def __init__(self, data_file_path, good_words_path, course_file_path, train_part, validate_part, dates_load=None):
         self.data_file_path = data_file_path
         self.wobj2num = self._get_good_words_encoding(good_words_path)
         self.dates2change = self._get_courses(course_file_path)
-        if dates_lines_starts_load is None:
+        if dates_load is None:
             logging.info('Start dates info retrieving')
             self.all_dates, self.dates_lines, self.total_lines = self._get_dates_info()
             logging.info('Dates info received')
         else:
-            load_path = dates_lines_starts_load if isinstance(dates_lines_starts_load, str) else self.__DEFAULT_DATES_INFO_PATH
+            load_path = dates_load if isinstance(dates_load, str) else self.__DEFAULT_DATES_INFO_PATH
             self.load_dates_info(load_path)
-        self.random_projection = self._get_random_projection()
         self.train_dates = int(len(self.all_dates) * train_part)
-        self.validation_date = int(len(self.all_dates) * validate_part)
+        self.validation_dates = int(len(self.all_dates) * validate_part)
 
-    def _read_n_records(self, file_object, n_lines):
-        X = np.zeros((n_lines, self.random_projection.n_components_))
-        X_line = np.zeros(len(self.wobj2num))
-        dates = set()
-        for i, line in itertools.islice(enumerate(file_object), n_lines):
-            dates.add(line.split()[0])
-            for wobj, wobj_count in iterate_wobj_counts(line.split()[1:]):
-                X_line[self.wobj2num[wobj]] = wobj_count
-            X[i] = self.random_projection.transform(X_line)
-            X_line.fill(0)
-        assert len(dates) == 1
-        return X
-
-    def _iterate_chunk(self, start_date_index, dates_count):
-        with open(self.data_file_path) as fl:
-            for _ in range(self.dates_lines[start_date_index]):
-                fl.readline()
-            start_seek_position = fl.tell()
-            while True:
-                for date_index in range(start_date_index, start_date_index + dates_count):
-                    if date_index + 1 == len(self.all_dates):
-                        news_count = self.total_lines - self.dates_lines[date_index]
-                    else:
-                        news_count = self.dates_lines[date_index + 1] - self.dates_lines[date_index]
-                    X = self._read_n_records(fl, news_count)
-                    if self.dates2change[self.all_dates[date_index]] < -.5:
-                        y = self.__down_y
-                    elif self.dates2change[self.all_dates[date_index]] > .5:
-                        y = self.__up_y
-                    else:
-                        y = self.__stagnate_y
-                    yield X, y
-                fl.seek(start_seek_position)
-
-    def iterate_train_chunk(self):
-        return self._iterate_chunk(0, self.train_dates)
-
-    def iterate_validation_chunk(self):
-        return self._iterate_chunk(self.train_dates, self.validation_dates)
+    @property
+    def vector_length(self):
+        return len(self.wobj2num)
 
     @staticmethod
     def _get_good_words_encoding(good_words_path):
         with open(good_words_path) as fl:
             return {line.split()[0]:i for i, line in enumerate(fl)}
-
-    def _get_random_projection(self):
-        proj = sklearn.random_projection.SparseRandomProjection(random_state=42)
-        temp_mat = scipy.sparse.eye(self.total_lines, len(self.wobj2num))
-        proj.fit(temp_mat)
-        return proj
 
     @staticmethod
     def _get_courses(file_path):
@@ -284,4 +238,115 @@ class CountTruncatedVectorizer(object):
     def load_dates_info(self, load_path=__DEFAULT_DATES_INFO_PATH):
         with open(load_path, 'rb') as fl:
             self.all_dates, self.dates_lines, self.total_lines = pickle.load(fl)
+
+    def iterate_train_chunk(self, scale=True):
+        return self._iterate_chunk(0, self.train_dates, scale)
+    
+    def iterate_validation_chunk(self, scale=True):
+        return self._iterate_chunk(self.train_dates, self.validation_dates, scale)
+    
+    def _get_news_count_for_date(self, date_index):
+        if date_index + 1 == len(self.all_dates):
+            news_count = self.total_lines - self.dates_lines[date_index]
+        else:
+            news_count = self.dates_lines[date_index + 1] - self.dates_lines[date_index]
+        return news_count
+    
+    def _get_y_by_date(self, date_index):
+        if self.dates2change[self.all_dates[date_index]] < 0:
+            return self.__down_y
+        else:
+            return self.__up_y
+
+class SparseIterator(BaseDataVectorizer):
+    __DEFAULT_SCALER_PATH = 'nn_scaler.pl'
+
+    def __init__(self, data_file_path, good_words_path, course_file_path, sparse_matrix_path, train_part, validate_part, dates_load=None, scaler_load=None):
+        super().__init__(data_file_path, good_words_path, course_file_path, train_part, validate_part, dates_load)
+        self.sparse_matrix = scipy.sparse.load_npz(sparse_matrix_path)
+        self._init_scaler(scaler_load)
+        if self.scaler:
+            self.scaler.transform(self.sparse_matrix)
+
+    def save_scaler(self, save_path=__DEFAULT_SCALER_PATH):
+        with open(save_path, 'wb') as fl:
+            pickle.dump(self.scaler, fl)
+
+    def load_scaler(self, load_path=__DEFAULT_SCALER_PATH):
+        with open(load_path, 'rb') as fl:
+            self.scaler = pickle.load(fl)
+
+    def _init_scaler(self, scaler_load):
+        if scaler_load is None:
+            self.scaler = sklearn.preprocessing.MaxAbsScaler(copy=False)
+            self.scaler.fit(self.sparse_matrix)
+        elif scaler_load:
+            load_path = scaler_load if isinstance(scaler_load, str) else self.__DEFAULT_SCALER_PATH
+            self.load_scaler(load_path)
+        else:
+            self.scaler = None
+
+    def _iterate_chunk(self, start_date_index, dates_count, scale=False):
+        while True:
+            for date_index in range(start_date_index, start_date_index + dates_count):
+                news_count = self._get_news_count_for_date(date_index)
+                X = self.sparse_matrix[self.dates_lines[date_index]:self.dates_lines[date_index] + news_count].toarray()
+                y = self._get_y_by_date(date_index)
+                if not scale and self.scaler:
+                    X = self.scaler.inverse_transform(X)
+                yield np.expand_dims(X, 0), y
+
+
+class CountDataVectorizer(BaseDataVectorizer):
+    __DEFAULT_SCALER_PATH = 'nn_scaler.pl'
+
+    def __init__(self, data_file_path, good_words_path, course_file_path, train_part, validate_part, dates_load=None, scaler_load=None):
+        super().__init__(data_file_path, good_words_path, course_file_path, train_part, validate_part, dates_load)
+        if scaler_load is None:
+            logging.info('Start scaling calculation')
+            self.scaler = self._get_scaler()
+            logging.info('Finished scaling calculation')
+        else:
+            load_path = scaler_load if isinstance(scaler_load, str) else self.__DEFAULT_SCALER_PATH
+            self.load_scaler(load_path)
+
+    def _read_n_records(self, file_object, n_lines):
+        X = np.zeros((n_lines, self.vector_length))
+        dates = set()
+        for i, line in itertools.islice(enumerate(file_object), n_lines):
+            splitted = line.split()
+            dates.add(splitted[0])
+            for wobj, wobj_count in iterate_wobj_counts(splitted[1:]):
+                X[i][self.wobj2num[wobj]] = wobj_count
+        assert len(dates) == 1
+        return X
+
+    def _iterate_chunk(self, start_date_index, dates_count, scale=False):
+        with open(self.data_file_path) as fl:
+            for _ in range(self.dates_lines[start_date_index]):
+                fl.readline()
+            start_seek_position = fl.tell()
+            while True:
+                for date_index in range(start_date_index, start_date_index + dates_count):
+                    news_count = self._get_news_count_for_date(date_index)
+                    X = self._read_n_records(fl, news_count)
+                    y = self._get_y_by_date(date_index)
+                    if scale:
+                        self.scaler.transform(X)
+                    yield np.expand_dims(X, 0), np.expand_dims(y, 0)
+                fl.seek(start_seek_position)
+
+    def _get_scaler(self):
+        scaler = sklearn.preprocessing.StandardScaler()
+        for chunk in itertools.islice(self.iterate_train_chunk(False), self.train_dates):
+            scaler.partial_fit(np.squeeze(chunk[0]))
+        return scaler
+
+    def save_scaler(self, save_path=__DEFAULT_SCALER_PATH):
+        with open(save_path, 'wb') as fl:
+            pickle.dump(self.scaler, fl)
+
+    def load_scaler(self, load_path=__DEFAULT_SCALER_PATH):
+        with open(load_path, 'rb') as fl:
+            self.scaler = pickle.load(fl)
 

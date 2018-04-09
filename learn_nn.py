@@ -1,53 +1,52 @@
 #!/usr/bin/env python3
 
 import numpy as np
-import keras
 import sys
-
 import logging
-
-if len(sys.argv) >= 2:
-    logger = logging.getLogger()
-    if sys.argv[-1].lower() == 'info':
-        logger.setLevel(logging.INFO)
-    else:
-        logger.setLevel(logging.DEBUG)
-
-
+import argparse
 import feature_nn_transform
 
-validate_size = 100000
-DATA_FILE_LENGTH=3453424
-FeatureProcessor = feature_nn_transform.FeatureTfIdfTransformer(
-    'lemmas/coursed_lemmas.txt', 'lemmas/wc.txt', 'course.csv',
-    validate_size, standartize_path='nn_feature_processor.npz',
-    total_document_count=DATA_FILE_LENGTH-validate_size)
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+def get_parser():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--name', help='Model name for files', default='model')
+    parser.add_argument('--lstm', help='Neurons in lstm. ', type=int, default=16)
+    return parser
+
+parser = get_parser()
+args = parser.parse_args()
+
+import keras
+
+train_part = 0.8
+validate_part = 0.15
+data_processor = feature_nn_transform.SparseIterator('lemmas/ccl.txt', 'lemmas/wc.txt', 'course.csv', 'lemmas/smd.npz', train_part, validate_part, dates_load=True, scaler_load=True)
 
 model = keras.models.Sequential()
-model.add(keras.layers.Dense(512, input_shape=(FeatureProcessor.vector_size,), activation='elu'))
-model.add(keras.layers.Dropout(0.3))
-model.add(keras.layers.Dense(128, activation='elu'))
-model.add(keras.layers.Dropout(0.3))
-model.add(keras.layers.Dense(2, activation='softmax'))
-model.compile(loss='binary_crossentropy', optimizer='nadam', metrics=['accuracy'])
+model.add(keras.layers.LSTM(args.lstm, input_shape=(None, data_processor.vector_length), dropout=0.2, recurrent_dropout=0.2))
+model.add(keras.layers.GaussianDropout(0.2))
+model.add(keras.layers.Dense(1, activation='sigmoid'))
 
-batch_size = 256
-epochs = 5000
+model.compile(optimizer='nadam', loss='binary_crossentropy', metrics=['acc'])
+model.summary()
 
 callbacks = [
-    keras.callbacks.ModelCheckpoint(filepath='nn/2_dense_03_drop_model.hdf5', save_best_only=True, period=10),
-    keras.callbacks.ReduceLROnPlateau(factor=0.5, patience=20, verbose=1, cooldown=10),
-    keras.callbacks.CSVLogger('nn/2_dense_03_drop_model.csv'),
-    keras.callbacks.EarlyStopping(patience=50)
+    keras.callbacks.ModelCheckpoint(filepath='nn/{}.hdf5'.format(args.name), save_best_only=True),
+    keras.callbacks.ReduceLROnPlateau(monitor='loss', factor=0.25, patience=3, verbose=1, cooldown=3),
+    keras.callbacks.CSVLogger('nn/{}.csv'.format(args.name)),
+    keras.callbacks.EarlyStopping(patience=8)
 ]
 
-input('Press ENTER to start')
+#input('Press ENTER to start')
 
 model.fit_generator(
-    FeatureProcessor.iterate_train_data(batch_size),
-    FeatureProcessor.total_document_count // batch_size,
-    validation_data=FeatureProcessor.iterate_validation_data(batch_size),
-    validation_steps=validate_size // batch_size,
-    epochs=epochs,
+    data_processor.iterate_train_chunk(),
+    data_processor.train_dates,
+    validation_data=data_processor.iterate_validation_chunk(),
+    validation_steps=data_processor.validation_dates,
+    epochs=200,
     callbacks=callbacks,
 )
