@@ -31,7 +31,7 @@ struct FasterStringHasher {
 using SVHashTable =
     std::unordered_map<std::string_view, int, FasterStringHasher>;
 
-SVHashTable GetMap(const std::vector<std::string>& words) {
+SVHashTable GetIndexMap(const std::vector<std::string>& words) {
   SVHashTable table;
   table.reserve(words.size());
   for (size_t i = 0; i < words.size(); ++i) {
@@ -69,7 +69,7 @@ void PrintAllElements(std::istream& input, std::ostream& output,
   int line_index = 0;
   while (std::getline(input, line)) {
     SplitIter(
-        line, [&index_table, line_index](std::string_view wobj_with_count) {
+        line, [&index_table, &output, line_index](std::string_view wobj_with_count) {
           {
             const auto separator_position = wobj_with_count.find(':');
             if (separator_position == std::string_view::npos) {
@@ -79,7 +79,7 @@ void PrintAllElements(std::istream& input, std::ostream& output,
                 wobj_with_count.substr(0, separator_position);
             const int count =
                 StringViewToInt(wobj_with_count.substr(separator_position + 1));
-            std::cout << line_index << " " << index_table.find(wobj)->second << " "
+            output << line_index << " " << index_table.find(wobj)->second << " "
                       << count << "\n";
           }
         });
@@ -96,7 +96,7 @@ int main(int argc, char** argv) {
   std::ifstream words_file(argv[1]);
   const auto all_words = LoadAllWords(words_file);
   words_file.close();
-  const auto words_to_index = GetMap(all_words);
+  const auto words_to_index = GetIndexMap(all_words);
   PrintAllElements(std::cin, std::cout, words_to_index);
   return 0;
 }
