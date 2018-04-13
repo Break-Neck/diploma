@@ -178,12 +178,12 @@ class FeatureTfIdfTransformer(object):
         return len(self.word2index)
 
 
-class PureIterableProvider:
-    def iterate_train_chunk(self):
-        return self._iterate_chunk(0, self.train_dates)
+class PureDateIterableProvider:
+    def iterate_train_dates_chunk(self):
+        return self._iterate_dates_chunk(0, self.train_dates)
     
-    def iterate_validation_chunk(self):
-        return self._iterate_chunk(self.train_dates, self.validation_dates)
+    def iterate_validation_dates_chunk(self):
+        return self._iterate_dates_chunk(self.train_dates, self.validation_dates)
 
 class BaseDataVectorizer(PureIterableProvider):
     __DEFAULT_DATES_INFO_PATH = 'dates_info.pl'
@@ -265,7 +265,7 @@ class SparseIterator(BaseDataVectorizer):
         super().__init__(data_file_path, good_words_path, course_file_path, train_part, validate_part, dates_load)
         self.sparse_matrix = scipy.sparse.load_npz(sparse_matrix_path)
 
-    def _iterate_chunk(self, start_date_index, dates_count):
+    def _iterate_dates_chunk(self, start_date_index, dates_count):
         while True:
             for date_index in range(start_date_index, start_date_index + dates_count):
                 news_count = self._get_news_count_for_date(date_index)
@@ -277,7 +277,7 @@ class RandomDateOrderIterator(SparseIterator):
     def __init__(self, data_file_path, good_words_path, course_file_path, sparse_matrix_path, train_part, validate_part, dates_load=None, seed=None):
         super().__init__(data_file_path, good_words_path, course_file_path, sparse_matrix_path, train_part, validate_part, dates_load)
 
-    def _iterate_chunk(self, start_date_index, dates_count):
+    def _iterate_dates_chunk(self, start_date_index, dates_count):
         iteration_dates_indexes = np.arange(start_date_index, start_date_index + dates_count)
         while True:
             for date_index in iteration_dates_indexes:
@@ -318,8 +318,8 @@ class ScaleIteratorWrapper(PureIterableProvider):
         if pretransform:
             self.sparse_iterator.sparse_matrix = self.scaler.transform(self.sparse_iterator.sparse_matrix, copy=False)
 
-    def _iterate_chunk(self, start_date_index, dates_count):
-        for X, y in self.sparse_iterator._iterate_chunk(start_date_index, dates_count):
+    def _iterate_dates_chunk(self, start_date_index, dates_count):
+        for X, y in self.sparse_iterator._iterate_dates_chunk(start_date_index, dates_count):
             if not self.pretransform:
                 X = np.expand_dims(self.scaler.transform(np.squeeze(X), copy=False), 0)
             yield X, y
@@ -349,7 +349,7 @@ class CountDataVectorizer(BaseDataVectorizer):
         assert len(dates) == 1
         return X
 
-    def _iterate_chunk(self, start_date_index, dates_count, scale=False):
+    def _iterate_dates_chunk(self, start_date_index, dates_count, scale=False):
         with open(self.data_file_path) as fl:
             for _ in range(self.dates_lines[start_date_index]):
                 fl.readline()
@@ -366,7 +366,7 @@ class CountDataVectorizer(BaseDataVectorizer):
 
     def _get_scaler(self):
         scaler = sklearn.preprocessing.StandardScaler()
-        for chunk in itertools.islice(self.iterate_train_chunk(False), self.train_dates):
+        for chunk in itertools.islice(self.iterate_train_dates_chunk(False), self.train_dates):
             scaler.partial_fit(np.squeeze(chunk[0]))
         return scaler
 
