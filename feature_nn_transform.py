@@ -10,6 +10,7 @@ import sklearn.decomposition
 import sklearn.preprocessing
 import scipy
 import scipy.sparse
+import bisect
 import gc
 
 
@@ -24,12 +25,20 @@ def iterate_wobj_counts(wobj_data):
         wobj, wobj_count = tuple(wdata.split(':'))
         yield wobj, float(wobj_count)
 
-class PureDateIterableProvider:
+class PureIterableProvider:
     def iterate_train_dates_chunk(self):
         return self._iterate_dates_chunk(0, self.train_dates)
     
     def iterate_validation_dates_chunk(self):
         return self._iterate_dates_chunk(self.train_dates, self.validation_dates)
+
+    def iterate_train_news(self, batch_size):
+        return self._iterate_news_chunk(0, int(self.train_dates / len(self.all_dates) * self.total_lines), batch_size)
+
+    def iterate_validation_news(self, batch_size):
+        train_end = int(self.train_dates / len(self.all_dates) * self.total_lines)
+        validation_end = train_end + int(self.validation_dates / len(self.all_dates) * self.total_lines)
+        return self._iterate_news_chunk(train_end, validation_end, batch_size)
 
 class BaseDataVectorizer(PureIterableProvider):
     __DEFAULT_DATES_INFO_PATH = 'dates_info.pl'
@@ -119,9 +128,22 @@ class SparseIterator(BaseDataVectorizer):
                 y = self._get_y_by_date(date_index)
                 yield np.expand_dims(X, 0), y
 
-class RandomDateOrderIterator(SparseIterator):
-    def __init__(self, data_file_path, good_words_path, course_file_path, sparse_matrix_path, train_part, validate_part, dates_load=None, seed=None):
+class RandomOrderIterator(SparseIterator):
+    def __init__(self, data_file_path, good_words_path, course_file_path, sparse_matrix_path, train_part, validate_part, dates_load=None):
         super().__init__(data_file_path, good_words_path, course_file_path, sparse_matrix_path, train_part, validate_part, dates_load)
+
+    def _iterate_news_chunk(self, start_index, end_index, batch_size):
+        iteration_indexes = np.arange(start_index, end_index)
+        while True:
+            for batch_start_index in range(0, len(iteration_indexes) - batch_size + 1, batch_size):
+                X = np.zeros((batch_size, self.vector_length))
+                y = np.zeros(batch_size)
+                for i in range(batch_size):
+                    current_record_index = iteration_indexes[batch_start_index + i]
+                    X[i] = self.sparse_matrix[current_record_index].toarray()
+                    y[i] = self._get_y_by_date(bisect.bisect_left(self.dates_lines, current_record_index))
+                yield X, y
+            np.random.shuffle(iteration_indexes)
 
     def _iterate_dates_chunk(self, start_date_index, dates_count):
         iteration_dates_indexes = np.arange(start_date_index, start_date_index + dates_count)
@@ -140,6 +162,8 @@ class ScaleIteratorWrapper(PureIterableProvider):
         self.sparse_iterator = sparse_iterator
         self.train_dates = self.sparse_iterator.train_dates
         self.validation_dates = self.sparse_iterator.validation_dates
+        self.all_dates = self.sparse_iterator.all_dates
+        self.total_lines = self.sparse_iterator.total_lines
         self.pretransform = pretransform
         self._init_scaler(scaler_load, pretransform)
 
@@ -164,10 +188,19 @@ class ScaleIteratorWrapper(PureIterableProvider):
         if pretransform:
             self.sparse_iterator.sparse_matrix = self.scaler.transform(self.sparse_iterator.sparse_matrix, copy=False)
 
+    def _iterate_news_chunk(self, start_index, end_index, batch_size):
+        for X, y in self.sparse_iterator._iterate_news_chunk(start_index, end_index, batch_size):
+            if not self.pretransform:
+                X = self.scaler.transform(X, copy=False)
+            yield X, y
+
     def _iterate_dates_chunk(self, start_date_index, dates_count):
         for X, y in self.sparse_iterator._iterate_dates_chunk(start_date_index, dates_count):
             if not self.pretransform:
-                X = np.expand_dims(self.scaler.transform(np.squeeze(X), copy=False), 0)
+                if len(X.shape) == 3:
+                    X = np.expand_dims(self.scaler.transform(np.squeeze(X), copy=False), 0)
+                else:
+                    X = self.scaler.transform(X, copy=False)
             yield X, y
 
 
