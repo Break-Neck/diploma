@@ -1,0 +1,23 @@
+\begin{thebibliography}{1}
+
+\bibitem{EFH}
+Eugene~F. Fama and Kenneth~R. French.
+\newblock {Size, value, and momentum in international stock returns}.
+\newblock {\em Journal of Financial Economics}, 105(3):457--472, 2012.
+
+\bibitem{risk_predict}
+Shimon Kogan, Dimitry Levin, Bryan~R. Routledge, Jacob~S. Sagi, and Noah~A.
+  Smith.
+\newblock Predicting risk from financial reports with regression.
+\newblock In {\em {HLT-NAACL}}, pages 272--280. The Association for
+  Computational Linguistics, 2009.
+
+\bibitem{select_important_news}
+Victor Lavrenko, Matt Schmill, Dawn Lawrie, Paul Ogilvie, David Jensen, and
+  James Allan.
+\newblock Language models for financial news recommendation.
+\newblock In {\em Proceedings of the Ninth International Conference on
+  Information and Knowledge Management}, CIKM '00, pages 389--396, New York,
+  NY, USA, 2000. ACM.
+
+\end{thebibliography}
